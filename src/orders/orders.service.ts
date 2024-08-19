@@ -1,11 +1,25 @@
-import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+	HttpStatus,
+	Inject,
+	Injectable,
+	Logger,
+	OnModuleInit,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { CreateOrderDto, OrderPaginationDto, StatusOrderDto } from './dto';
-import { RpcException } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
 	private readonly logger = new Logger('OrdersService');
+
+	constructor(
+		@Inject('PRODUCTS_SERVICE')
+		private readonly productsClient: ClientProxy,
+	) {
+		super();
+	}
 
 	async onModuleInit() {
 		await this.$connect();
@@ -40,6 +54,15 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 			where: {
 				id,
 			},
+			include: {
+				OrderItem: {
+					select: {
+						price: true,
+						quantity: true,
+						productId: true,
+					},
+				},
+			},
 		});
 
 		if (!order) {
@@ -52,10 +75,56 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 		return order;
 	}
 
-	create(createOrderDto: CreateOrderDto) {
-		return this.order.create({
-			data: createOrderDto,
-		});
+	async create(createOrderDto: CreateOrderDto) {
+		try {
+			// VALIDATE IF EXISTS IN DB PRODUCTS
+			const products: any[] = await firstValueFrom(
+				this.productsClient.send(
+					{ cmd: 'validate_products' },
+					createOrderDto.items.map((i) => i.productId),
+				),
+			);
+
+			const totalAmount = createOrderDto.items.reduce((acc, item) => {
+				const price = products.find((i) => i.id === item.productId)?.price;
+				return acc + price * item.quantity;
+			}, 0);
+
+			const totalItems = createOrderDto.items.reduce((acc, item) => {
+				return acc + item.quantity;
+			}, 0);
+
+			const order = await this.order.create({
+				data: {
+					totalAmount,
+					totalItems,
+					OrderItem: {
+						createMany: {
+							data: createOrderDto.items.map((item) => ({
+								price:
+									products.find((i) => i.id === item.productId).price ??
+									item.price,
+								productId: item.productId,
+								quantity: item.quantity,
+							})),
+						},
+					},
+				},
+				include: {
+					OrderItem: {
+						select: {
+							price: true,
+							quantity: true,
+							productId: true,
+						},
+					},
+				},
+			});
+
+			return order;
+		} catch (e) {
+			throw new RpcException(e);
+		}
 	}
 
 	async changeStatus(request: StatusOrderDto) {

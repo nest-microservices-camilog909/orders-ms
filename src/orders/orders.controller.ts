@@ -1,8 +1,7 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
+import { CreateOrderDto, OrderPaginationDto, StatusOrderDto } from './dto';
 
 @Controller()
 export class OrdersController {
@@ -14,17 +13,17 @@ export class OrdersController {
 	}
 
 	@MessagePattern('findAll')
-	findAll() {
-		return this.ordersService.findAll();
+	findAll(@Payload() pagination: OrderPaginationDto) {
+		return this.ordersService.findAll(pagination);
 	}
 
 	@MessagePattern('findOne')
-	findOne(@Payload() id: number) {
+	findOne(@Payload('id') id: string) {
 		return this.ordersService.findOne(id);
 	}
 
 	@MessagePattern('changeStatus')
-	changeStatus(@Payload() id: number) {
-		return this.ordersService.changeStatus(id);
+	changeStatus(@Payload() request: StatusOrderDto) {
+		return this.ordersService.changeStatus(request);
 	}
 }

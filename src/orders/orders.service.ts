@@ -15,8 +15,8 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 	private readonly logger = new Logger('OrdersService');
 
 	constructor(
-		@Inject('PRODUCTS_SERVICE')
-		private readonly productsClient: ClientProxy,
+		@Inject('NATS_SERVICE')
+		private readonly client: ClientProxy,
 	) {
 		super();
 	}
@@ -79,7 +79,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 		try {
 			// VALIDATE IF EXISTS IN DB PRODUCTS
 			const products: any[] = await firstValueFrom(
-				this.productsClient.send(
+				this.client.send(
 					{ cmd: 'validate_products' },
 					createOrderDto.items.map((i) => i.productId),
 				),

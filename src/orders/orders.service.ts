@@ -9,6 +9,8 @@ import { PrismaClient } from '@prisma/client';
 import { CreateOrderDto, OrderPaginationDto, StatusOrderDto } from './dto';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
+import { OrderWithProducts } from './interfaces/order.interface';
+import { PaidOrderDto } from './dto/paid-order.dto';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -138,5 +140,42 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 				id: request.id,
 			},
 		});
+	}
+
+	async createPaymentSession(order: OrderWithProducts) {
+		const paymentSession = await firstValueFrom(
+			this.client.send('create.payment.session', {
+				orderId: order.id,
+				items: order.OrderItem.map((item, i) => ({
+					name: 'Product ' + (i + 1),
+					price: item.price,
+					quantity: item.quantity,
+				})),
+			}),
+		);
+
+		return paymentSession;
+	}
+
+	async paidOrder(request: PaidOrderDto) {
+		const updatedOrder = await this.order.update({
+			where: {
+				id: request.orderId,
+			},
+			data: {
+				status: 'PAID',
+				paid: true,
+				paidAt: new Date(),
+				stripeChargeId: request.stripeId,
+
+				OrderReceipt: {
+					create: {
+						receiptUrl: request.receiptUrl,
+					},
+				},
+			},
+		});
+
+		return updatedOrder;
 	}
 }
